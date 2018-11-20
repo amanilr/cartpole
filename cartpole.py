@@ -2,24 +2,24 @@ import random
 import gym
 import numpy as np
 from collections import deque
-from keras.models import Sequential
-from keras.layers import Dense
-from keras.optimizers import Adam
 
 
+from sklearn.multioutput import MultiOutputRegressor
+from lightgbm import LGBMRegressor
 from scores.score_logger import ScoreLogger
+from sklearn.model_selection import train_test_split
 
 ENV_NAME = "CartPole-v1"
 
 GAMMA = 0.95
 LEARNING_RATE = 0.001
 
-MEMORY_SIZE = 1000000
+MEMORY_SIZE = 1000
 BATCH_SIZE = 20
 
 EXPLORATION_MAX = 1.0
-EXPLORATION_MIN = 0.01
-EXPLORATION_DECAY = 0.995
+EXPLORATION_MIN = 0.05
+EXPLORATION_DECAY = 0.96
 
 
 class DQNSolver:
@@ -30,11 +30,8 @@ class DQNSolver:
         self.action_space = action_space
         self.memory = deque(maxlen=MEMORY_SIZE)
 
-        self.model = Sequential()
-        self.model.add(Dense(24, input_shape=(observation_space,), activation="relu"))
-        self.model.add(Dense(24, activation="relu"))
-        self.model.add(Dense(self.action_space, activation="linear"))
-        self.model.compile(loss="mse", optimizer=Adam(lr=LEARNING_RATE))
+        self.model = MultiOutputRegressor(LGBMRegressor(n_estimators=100, n_jobs=-1))
+        self.isFit = False
 
     def remember(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
@@ -42,20 +39,35 @@ class DQNSolver:
     def act(self, state):
         if np.random.rand() < self.exploration_rate:
             return random.randrange(self.action_space)
-        q_values = self.model.predict(state)
+        if self.isFit == True:
+            q_values = self.model.predict(state)
+        else:
+            q_values = np.zeros(self.action_space).reshape(1, -1)
         return np.argmax(q_values[0])
 
     def experience_replay(self):
         if len(self.memory) < BATCH_SIZE:
             return
-        batch = random.sample(self.memory, BATCH_SIZE)
+        batch = random.sample(self.memory, int(len(self.memory)/1))
+        X = []
+        targets = []
         for state, action, reward, state_next, terminal in batch:
             q_update = reward
             if not terminal:
-                q_update = (reward + GAMMA * np.amax(self.model.predict(state_next)[0]))
-            q_values = self.model.predict(state)
+                if self.isFit:
+                    q_update = (reward + GAMMA * np.amax(self.model.predict(state_next)[0]))
+                else:
+                    q_update = reward
+            if self.isFit:
+                q_values = self.model.predict(state)
+            else:
+                q_values = np.zeros(self.action_space).reshape(1, -1)
             q_values[0][action] = q_update
-            self.model.fit(state, q_values, verbose=0)
+            
+            X.append(list(state[0]))
+            targets.append(q_values[0])
+        self.model.fit(X, targets)
+        self.isFit = True
         self.exploration_rate *= EXPLORATION_DECAY
         self.exploration_rate = max(EXPLORATION_MIN, self.exploration_rate)
 
