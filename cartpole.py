@@ -1,26 +1,26 @@
 import random
-import gym
-import numpy as np
 from collections import deque
 
-
-from sklearn.multioutput import MultiOutputRegressor
+import gym
+import numpy as np
 from lightgbm import LGBMRegressor
+from sklearn.multioutput import MultiOutputRegressor
+
 from scores.score_logger import ScoreLogger
-from sklearn.model_selection import train_test_split
 
 ENV_NAME = "CartPole-v1"
 
 GAMMA = 0.95
 LEARNING_RATE = 0.001
 
-MEMORY_SIZE = 1000
-BATCH_SIZE = 20
+MEMORY_SIZE = 3000
+BATCH_SIZE = 1000
 
 EXPLORATION_MAX = 1.0
-EXPLORATION_MIN = 0.05
+EXPLORATION_MIN = 0.03
 EXPLORATION_DECAY = 0.96
 
+TRAINING_STEP = 10
 
 class DQNSolver:
 
@@ -46,9 +46,9 @@ class DQNSolver:
         return np.argmax(q_values[0])
 
     def experience_replay(self):
-        if len(self.memory) < BATCH_SIZE:
+        if len(self.memory) < BATCH_SIZE / 10:
             return
-        batch = random.sample(self.memory, int(len(self.memory)/1))
+        batch = random.sample(self.memory, min(BATCH_SIZE, len(self.memory)))
         X = []
         targets = []
         for state, action, reward, state_next, terminal in batch:
@@ -97,8 +97,8 @@ def cartpole():
                 print("Run: " + str(run) + ", exploration: " + str(dqn_solver.exploration_rate) + ", score: " + str(step))
                 score_logger.add_score(step, run)
                 break
-            dqn_solver.experience_replay()
-
+            if step % TRAINING_STEP == 1:
+                dqn_solver.experience_replay()
 
 if __name__ == "__main__":
     cartpole()
